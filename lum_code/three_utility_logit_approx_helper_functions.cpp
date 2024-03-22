@@ -19,6 +19,15 @@ double log_sum_exp(double a, double b) {
   return(max(a, b) + log1p(exp(min(a, b) - max(a, b))));
 }
 
+double log_1p2exp(double a, double b) {
+  double max_val = max(a, b);
+  double min_val = min(a, b);
+  if (max_val > 700) {
+    return(max_val + log1p(exp(min_val - max_val) + exp(-max_val)));
+  }
+  return(log1p(exp(max_val) + exp(min_val)));
+}
+
 double sample_three_utility_logit_approx_beta(
     rowvec y_star_m_1, rowvec y_star_m_3, 
     rowvec alpha_v_1, rowvec alpha_v_2,
@@ -26,7 +35,6 @@ double sample_three_utility_logit_approx_beta(
     uvec approx_label_v_1, uvec approx_label_v_3,
     double beta_mean, double beta_s,
     vec normal_approx_means, vec normal_approx_sd) { 
-  // bool pos_ind = false, bool neg_ind = false) {
   
   y_star_m_1 = y_star_m_1 - alpha_v_1 % delta_v_1 - 
     normal_approx_means(approx_label_v_1).t();
@@ -39,8 +47,6 @@ double sample_three_utility_logit_approx_beta(
   alpha_v_1 /= normal_approx_sd(approx_label_v_1).t();
   alpha_v_2 /= normal_approx_sd(approx_label_v_3).t();
   
-  // y_star_m_1 = y_star_m_1 - alpha_m.row(0) % delta_m.row(0);
-  // y_star_m_2 = y_star_m_2 - alpha_m.row(1) % delta_m.row(1);
   double post_var = 1.0 / pow(beta_s, 2) + 
     dot(alpha_v_1, alpha_v_1) + dot(alpha_v_2, alpha_v_2);
   double post_mean = beta_mean / pow(beta_s, 2) - 
@@ -60,9 +66,6 @@ vec sample_three_utility_logit_approx_matched_alpha(
   
   vec beta_diff_v_1 = (beta_v - delta_v(0)) / normal_approx_sd(approx_label_v_1);
   vec beta_diff_v_2 = (beta_v - delta_v(1)) / normal_approx_sd(approx_label_v_3);
-  // vec diff_sq_v = {
-  //   dot(beta_diff_v_1, beta_diff_v_1),
-  //   dot(beta_diff_v_2, beta_diff_v_2)};
   
   mat post_cov = alpha_cov_s.i();
   post_cov(0, 0) += dot(beta_diff_v_1, beta_diff_v_1);
@@ -77,8 +80,6 @@ vec sample_three_utility_logit_approx_matched_alpha(
                         normal_approx_sd(approx_label_v_3));
   post_mean = solve(post_cov, post_mean);
   
-  // Rcout << "okay" << endl;
-  
   double sample_order_up_prob = 
     R::pnorm(0, post_mean(0), sqrt(1.0 / post_cov(0,0)), false, true) +
     R::pnorm(0, post_mean(1), sqrt(1.0 / post_cov(1,1)), true, true) +
@@ -88,25 +89,10 @@ vec sample_three_utility_logit_approx_matched_alpha(
     R::pnorm(0, post_mean(1), sqrt(1.0 / post_cov(1,1)), false, true) +
     as_scalar(dmvnorm(delta_v.t(), -delta_mean_v, delta_cov_s, true));
   
-  // Rcout << "okay" << endl;
-  
   double log_sample_prob = sample_order_up_prob - 
     log_sum_exp(sample_order_up_prob, sample_order_down_prob);
-    // (max(sample_order_up_prob, sample_order_down_prob) +
-    // log(1 + exp(min(sample_order_up_prob, sample_order_down_prob) - 
-    // max(sample_order_up_prob, sample_order_down_prob))));
   double match_var = (log(randu()) < log_sample_prob) * 2 - 1;
-  
-  // if (!is_finite(log_sample_prob)) {
-  //   Rcout << log_sample_prob;
-  // }
-  // if (!post_mean.is_finite()) {
-  //   Rcout << post_mean;
-  // }
-  // if (!is_finite(1.0 / sqrt(post_cov(0, 0)))) {
-  //   Rcout << post_cov;
-  // }
-  
+    
   vec out_v(3);
   if (match_var == 1) {
     out_v(0) = rtn1(post_mean(0), 1.0 / sqrt(post_cov(0, 0)), 
@@ -119,17 +105,7 @@ vec sample_three_utility_logit_approx_matched_alpha(
     out_v(1) = rtn1(post_mean(1), 1.0 / sqrt(post_cov(1, 1)), 
           0, datum::inf);
   }
-  out_v(2) = match_var;
-  
-  // if (!out_v.is_finite()) {
-  //   Rcout << "alpha" << endl;
-  //   Rcout << out_v << endl;
-  //   Rcout << post_mean << endl;
-  //   Rcout << post_cov << endl;
-  //   Rcout << post_cov.i() << endl;
-  //   Rcout << log_sample_prob << endl;
-  // }
-  
+  out_v(2) = match_var;  
   
   return(out_v);
 }
@@ -149,11 +125,6 @@ vec sample_three_utility_logit_approx_matched_delta(
   vec std_alpha_1 = alpha_v(1) / normal_approx_sd(approx_label_v_3);
   
 
-  // y_star_m_1 = y_star_m_1 + alpha_v(0) * beta_v.t(); 
-  // y_star_m_2 = y_star_m_2 + alpha_v(1) * beta_v.t(); 
-  // beta_v.n_elem * 
-  //   diagmat(alpha_v) * diagmat(alpha_v) + 
-  //   
   mat post_cov = delta_cov_s.i();
   post_cov(0, 0) += dot(std_alpha_0, std_alpha_0);
   post_cov(1, 1) += dot(std_alpha_1, std_alpha_1);
@@ -163,6 +134,31 @@ vec sample_three_utility_logit_approx_matched_delta(
   post_mean(1) += dot(std_alpha_1, y_star_m_3);
   return(rmvnorm(1, solve(post_cov, post_mean),
                  post_cov.i()).t());
+}
+
+vec flip_signs(
+  vec vote_v, vec alpha_val, vec beta_val, vec delta_val, double match_var,
+  vec alpha_mean_v, mat alpha_cov_s, vec delta_mean_v, mat delta_cov_s) {
+  
+  double curr_prob = 0;
+  double flip_prob = 0;
+  
+  for (int i = 0; i < beta_val.n_elem; i++) {
+    vec mean_v_curr = -alpha_val % (beta_val(i) - delta_val);
+    vec mean_v_flip = alpha_val % (beta_val(i) + delta_val);
+    
+    curr_prob -= log_1p2exp(mean_v_curr(0), mean_v_curr(1));
+    flip_prob -= log_1p2exp(mean_v_flip(0), mean_v_flip(1));
+    if (vote_v(i) < 0.5) {
+      curr_prob += log_sum_exp(mean_v_curr(0), mean_v_curr(1)); 
+      flip_prob += log_sum_exp(mean_v_flip(0), mean_v_flip(1));
+    }
+  }
+  
+  if (log(randu()) < (flip_prob - curr_prob)) {
+    return(-join_vert(alpha_val, delta_val)); 
+  }
+  return(join_vert(alpha_val, delta_val));
 }
 
 unsigned int sample_approx_label_v(
@@ -177,36 +173,12 @@ unsigned int sample_approx_label_v(
       R::dnorm(y_star_m_val, normal_approx_means(k) - mean_val, 
             normal_approx_sd(k), true);
     norm_factor = log_sum_exp(norm_factor, log_prob(k));
-    // norm_factor = max(norm_factor, log_prob(k)) +
-    //   log1p(exp(min(norm_factor, log_prob(k)) - max(norm_factor, log_prob(k))));
   }
   vec prob = exp(log_prob - norm_factor);
   uvec opts = linspace<uvec>(0, normal_approx_means.n_elem - 1, normal_approx_means.n_elem);
   uvec draw = Rcpp::RcppArmadillo::sample(opts, 1, false, prob);
   return(draw(0));
 }
-
-// unsigned int sample_approx_label_v_fast(
-//     double y_star_m_val, double alpha_val, double beta_val, double delta_val,
-//     vec normal_approx_means, vec normal_approx_sd, vec normal_approx_prob) {
-//   
-//   vec log_prob(normal_approx_means.n_elem, fill::zeros);
-//   double norm_factor = -datum::inf;
-//   double mean_val = alpha_val * (beta_val - delta_val);
-//   double log_unif = log(randu());
-//   for (int k = 0; k < normal_approx_means.n_elem; k++) {
-//     log_prob(k) = log(normal_approx_prob(k)) +
-//       R::dnorm(y_star_m_val, normal_approx_means(k) - mean_val, 
-//                normal_approx_sd(k), true);
-//     norm_factor = log_sum_exp(norm_factor, log_prob(k));
-//     // norm_factor = max(norm_factor, log_prob(k)) +
-//     //   log1p(exp(min(norm_factor, log_prob(k)) - max(norm_factor, log_prob(k))));
-//   }
-//   vec prob = exp(log_prob - norm_factor);
-//   uvec opts = linspace<uvec>(0, normal_approx_means.n_elem - 1, normal_approx_means.n_elem);
-//   uvec draw = Rcpp::RcppArmadillo::sample(opts, 1, false, prob);
-//   return(draw(0));
-// }
 
 vec sample_y_star_m_na(double mean_m_1, double mean_m_2, 
                        vec normal_approx_means, vec normal_approx_sd) {
@@ -292,8 +264,6 @@ List sample_three_utility_logit_approx(
   
   
   vec current_param_val_v = all_param_draws.row(0).t();
-  // vec accept_count(zeta_param_start_ind - psi_param_start_ind);
-  // accept_count.zeros();
   for (int i = 0; i < num_iter; i++) {
     if (i % 100 == 0) {
       Rcout << i << "\n";
@@ -352,9 +322,6 @@ List sample_three_utility_logit_approx(
     for (unsigned int j = 0; j < vote_m.n_rows; j++) {
       uvec current_ind = {j};
       uvec interested_inds = find_finite(vote_m.row(j).t());
-      // rowvec y_star_m_1_v = y_star_m_1.row(j);
-      // rowvec y_star_m_3_v = y_star_m_3.row(j);
-      // Rcout << y_star_m_1.submat(current_ind, interested_inds) << endl;
       current_param_val_v(leg_start_ind + j) =
         sample_three_utility_logit_approx_beta(
           y_star_m_1.submat(current_ind, interested_inds),
@@ -374,7 +341,6 @@ List sample_three_utility_logit_approx(
       uvec interested_inds = find_finite(vote_m.col(j));
       vec delta_v = {current_param_val_v(delta_v_1_start_ind + j),
                      current_param_val_v(delta_v_2_start_ind + j)};
-      // Rcout << y_star_m_1.submat(interested_inds, current_ind) << endl;
       vec out_v =
         sample_three_utility_logit_approx_matched_alpha(
           y_star_m_1.submat(interested_inds, current_ind), 
@@ -407,12 +373,34 @@ List sample_three_utility_logit_approx(
       current_param_val_v(delta_v_1_start_ind + j) = out_v(0);
       current_param_val_v(delta_v_2_start_ind + j) = out_v(1);
     }
+
+    if (i > 0 && ((i + 1) % 5 == 0)) {
+      for(unsigned int j = 0; j < vote_m.n_cols; j++) {
+        uvec current_ind = {j};
+        uvec interested_inds = find_finite(vote_m.col(j));
+        vec alpha_v = {current_param_val_v(alpha_v_1_start_ind + j),
+                       current_param_val_v(alpha_v_2_start_ind + j)};
+        vec delta_v = {current_param_val_v(delta_v_1_start_ind + j),
+                       current_param_val_v(delta_v_2_start_ind + j)};
+        vec out_v = flip_signs(
+            vote_m.submat(interested_inds, current_ind), 
+            alpha_v, current_param_val_v(leg_start_ind + interested_inds), 
+            delta_v, match_var_v(j), 
+            alpha_mean_v, alpha_cov_s, delta_mean_v, delta_cov_s); 
+        
+        current_param_val_v(alpha_v_1_start_ind + j) = out_v(0);
+        current_param_val_v(alpha_v_2_start_ind + j) = out_v(1);
+        current_param_val_v(delta_v_1_start_ind + j) = out_v(2);
+        current_param_val_v(delta_v_2_start_ind + j) = out_v(3);
+      }
+    }
     
     if (pos_ind > -1 && (current_param_val_v(leg_start_ind + pos_ind) < 0)) {
       current_param_val_v = -current_param_val_v;
     }
     
-    if (neg_ind > -1 && pos_ind < 0 && (current_param_val_v(leg_start_ind + neg_ind) > 0)) {
+    if (neg_ind > -1 && pos_ind < 0 && 
+         (current_param_val_v(leg_start_ind + neg_ind) > 0)) {
       current_param_val_v = -current_param_val_v;
     }
     
